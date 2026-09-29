@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4f3ed">
+  <title>Пятилетка</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://st.max.ru/js/max-web-app.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">К содержанию</a>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#map" data-nav="map" aria-label="Пятилетка, моя карта">
+        <span class="brand-mark" aria-hidden="true">5</span>
+        <span>Пятилетка</span>
+      </a>
+      <div class="view-controls" aria-label="Настройки отображения">
+        <button class="icon-button" id="font-toggle" type="button" aria-label="Увеличить шрифт">Аа</button>
+        <button class="icon-button" id="theme-toggle" type="button" aria-label="Переключить тему">◐</button>
+      </div>
+    </header>
+
+    <main id="content" tabindex="-1">
+      <section class="state-panel" aria-live="polite">
+        <span class="loader" aria-hidden="true"></span>
+        <h1>Загружаем вашу карту</h1>
+        <p>Это займёт несколько секунд.</p>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" id="bottom-nav" aria-label="Основные разделы" hidden>
+      <button type="button" data-nav="map"><span aria-hidden="true">○</span>Карта</button>
+      <button type="button" data-nav="tasks"><span aria-hidden="true">✓</span>Шаги</button>
+      <button type="button" data-nav="profile"><span aria-hidden="true">●</span>Профиль</button>
+    </nav>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

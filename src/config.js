@@ -31,6 +31,11 @@ export function loadConfig(overrides = {}) {
     miniappEnabled: env.MINIAPP_ENABLED !== 'false',
     queueMinIntervalMs: int('QUEUE_MIN_INTERVAL_MS', 500),
     maxRequestTimeoutMs: int('MAX_REQUEST_TIMEOUT_MS', 35_000),
+    apiRateLimit: int('API_RATE_LIMIT', 60),
+    requestBodyLimitBytes: int('REQUEST_BODY_LIMIT_BYTES', 16_384),
+    requestTimeoutMs: int('REQUEST_TIMEOUT_MS', 10_000),
+    headersTimeoutMs: int('HEADERS_TIMEOUT_MS', 5_000),
+    demoUserId: int('DEMO_USER_ID', 900000001),
     ...overrides,
   };
   if (!cfg.botToken) {
@@ -47,6 +52,11 @@ export function loadConfig(overrides = {}) {
   }
   if (!Number.isInteger(cfg.maxRequestTimeoutMs) || cfg.maxRequestTimeoutMs <= 0) {
     throw new Error('MAX_REQUEST_TIMEOUT_MS должен быть целым положительным числом.');
+  }
+  for (const name of ['apiRateLimit', 'requestBodyLimitBytes', 'requestTimeoutMs', 'headersTimeoutMs', 'demoUserId']) {
+    if (!Number.isInteger(cfg[name]) || cfg[name] <= 0) {
+      throw new Error(`${name} должен быть целым положительным числом.`);
+    }
   }
   if (cfg.mode === 'webhook' && !cfg.publicBaseUrl) {
     throw new Error('Для BOT_MODE=webhook нужен PUBLIC_BASE_URL (публичный https-адрес сервиса).');

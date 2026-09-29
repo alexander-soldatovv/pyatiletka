@@ -5,9 +5,10 @@ node_modules/
 coverage/
 data/*.db
 data/*.db-*
+data/*.sqlite
+data/*.sqlite-*
 certs/*.key
 certs/*.pem
 !certs/README.md
 .DS_Store
 tmp/
-

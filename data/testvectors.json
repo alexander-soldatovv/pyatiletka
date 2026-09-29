@@ -1,0 +1,45 @@
+{
+  "note": "Возраст в месяцах для общеустановленной страховой пенсии. Досрочные основания не учитываются.",
+  "source": {
+    "title": "Федеральный закон от 28.12.2013 N 400-ФЗ, статья 8 и Приложение 6",
+    "url": "https://www.consultant.ru/document/cons_doc_LAW_156525/cf910e14d4aaa0a72a80966dfc1ca31d7a7ce4d9/",
+    "checked": "2026-09-29"
+  },
+  "vectors": [
+    { "sex": "m", "birth_year": 1959, "expected_age_months": 726 },
+    { "sex": "m", "birth_year": 1960, "expected_age_months": 738 },
+    { "sex": "m", "birth_year": 1961, "expected_age_months": 756 },
+    { "sex": "m", "birth_year": 1962, "expected_age_months": 768 },
+    { "sex": "m", "birth_year": 1963, "expected_age_months": 780 },
+    { "sex": "m", "birth_year": 1964, "expected_age_months": 780 },
+    { "sex": "m", "birth_year": 1965, "expected_age_months": 780 },
+    { "sex": "m", "birth_year": 1966, "expected_age_months": 780 },
+    { "sex": "m", "birth_year": 1967, "expected_age_months": 780 },
+    { "sex": "m", "birth_year": 1968, "expected_age_months": 780 },
+    { "sex": "m", "birth_year": 1969, "expected_age_months": 780 },
+    { "sex": "m", "birth_year": 1970, "expected_age_months": 780 },
+    { "sex": "m", "birth_year": 1971, "expected_age_months": 780 },
+    { "sex": "m", "birth_year": 1972, "expected_age_months": 780 },
+    { "sex": "m", "birth_year": 1973, "expected_age_months": 780 },
+    { "sex": "m", "birth_year": 1974, "expected_age_months": 780 },
+    { "sex": "m", "birth_year": 1975, "expected_age_months": 780 },
+    { "sex": "f", "birth_year": 1959, "expected_age_months": 660 },
+    { "sex": "f", "birth_year": 1960, "expected_age_months": 660 },
+    { "sex": "f", "birth_year": 1961, "expected_age_months": 660 },
+    { "sex": "f", "birth_year": 1962, "expected_age_months": 660 },
+    { "sex": "f", "birth_year": 1963, "expected_age_months": 660 },
+    { "sex": "f", "birth_year": 1964, "expected_age_months": 666 },
+    { "sex": "f", "birth_year": 1965, "expected_age_months": 678 },
+    { "sex": "f", "birth_year": 1966, "expected_age_months": 696 },
+    { "sex": "f", "birth_year": 1967, "expected_age_months": 708 },
+    { "sex": "f", "birth_year": 1968, "expected_age_months": 720 },
+    { "sex": "f", "birth_year": 1969, "expected_age_months": 720 },
+    { "sex": "f", "birth_year": 1970, "expected_age_months": 720 },
+    { "sex": "f", "birth_year": 1971, "expected_age_months": 720 },
+    { "sex": "f", "birth_year": 1972, "expected_age_months": 720 },
+    { "sex": "f", "birth_year": 1973, "expected_age_months": 720 },
+    { "sex": "f", "birth_year": 1974, "expected_age_months": 720 },
+    { "sex": "f", "birth_year": 1975, "expected_age_months": 720 }
+  ]
+}
+

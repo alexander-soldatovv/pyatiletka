@@ -1,0 +1,39 @@
+{
+  "version": "2.0-draft",
+  "regions": {
+    "moscow": {
+      "label": "Москва",
+      "task_overrides": {
+        "regional_measures": {
+          "channels": [
+            {
+              "label": "Московское долголетие (mos.ru)",
+              "url": "https://www.mos.ru/city/projects/dolgoletie/"
+            }
+          ],
+          "extra_note": "В Москве есть проект «Московское долголетие»: бесплатные занятия (более 40 направлений), запись через mos.ru, центры, МФЦ или поликлинику. Возрастные условия уточните на mos.ru, мы их не проверили.",
+          "source": {
+            "title": "mos.ru: Московское долголетие",
+            "url": "https://www.mos.ru/city/projects/dolgoletie/",
+            "checked": "2026-09-29",
+            "quality": "Прочитано инструментом-пересказчиком, возраст участников не подтверждён"
+          }
+        }
+      }
+    },
+    "other": {
+      "label": "Другой регион",
+      "task_overrides": {
+        "regional_measures": {
+          "channels": [
+            {
+              "label": "Госуслуги: меры поддержки",
+              "url": "https://www.gosuslugi.ru/"
+            }
+          ],
+          "extra_note": "Для вашего региона отдельного пакета данных пока нет. Меры поддержки уточняйте в органе социальной защиты региона."
+        }
+      }
+    }
+  }
+}

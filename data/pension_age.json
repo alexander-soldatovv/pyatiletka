@@ -1,0 +1,30 @@
+{
+  "version": "2.1.0",
+  "checked": "2026-09-29",
+  "quality": "Сверено с редакцией от 20.02.2026 статьи 8 и Приложения 6 к Федеральному закону N 400-ФЗ. Для достигших прежнего возраста в 2019-2020 годах учтено назначение на 6 месяцев раньше.",
+  "base_age_years": {
+    "m": 60,
+    "f": 55
+  },
+  "shift_months_by_base_age_year": {
+    "before_2019": 0,
+    "2019": 12,
+    "2020": 24,
+    "2021": 36,
+    "2022": 48,
+    "2023_and_later": 60
+  },
+  "early_assignment_months_by_base_age_year": {
+    "2019": 6,
+    "2020": 6
+  },
+  "pre_pension_window_months": 60,
+  "tax_benefit_from_base_age": true,
+  "source": {
+    "title": "Федеральный закон от 28.12.2013 N 400-ФЗ, статья 8 и Приложение 6",
+    "url": "https://www.consultant.ru/document/cons_doc_LAW_156525/cf910e14d4aaa0a72a80966dfc1ca31d7a7ce4d9/",
+    "checked": "2026-09-29",
+    "quality": "Текст закона прочитан напрямую в справочной системе"
+  }
+}
+

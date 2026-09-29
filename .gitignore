@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+node_modules/
+coverage/
+data/*.db
+data/*.db-*
+certs/*.key
+certs/*.pem
+!certs/README.md
+.DS_Store
+tmp/
+

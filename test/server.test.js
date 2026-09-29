@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createPyatiletkaBot } from '../src/bot.js';
 import { createStorage } from '../src/db.js';
+import { createMetrics } from '../src/metrics.js';
 import { createHttpServer } from '../src/server.js';
 import { signInitData } from '../src/webapp-auth.js';
 
@@ -10,7 +11,7 @@ const token = 'server-test-token-not-real';
 const eventSalt = 'server-test-event-salt-123456';
 const instant = new Date('2026-09-29T12:00:00Z');
 
-async function fixture(overrides = {}) {
+async function fixture(overrides = {}, serverOverrides = {}) {
   const storage = createStorage({ eventSalt, now: () => instant });
   const config = {
     botToken: token,
@@ -20,9 +21,18 @@ async function fixture(overrides = {}) {
     demoUserId: 99,
     apiRateLimit: 60,
     requestBodyLimitBytes: 16_384,
+    adminToken: 'server-test-admin-token',
     ...overrides,
   };
-  const server = createHttpServer({ storage, config, clock: () => instant, logger: { error() {} } });
+  const metrics = createMetrics({ clock: () => instant });
+  const server = createHttpServer({
+    storage,
+    config,
+    clock: () => instant,
+    metrics,
+    logger: { error() {} },
+    ...serverOverrides,
+  });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const address = server.address();
@@ -37,6 +47,7 @@ async function fixture(overrides = {}) {
     server,
     baseUrl,
     initData,
+    metrics,
     async close() {
       server.close();
       await once(server, 'close');
@@ -54,7 +65,22 @@ test('сервер отдаёт healthz, статику и заголовки б
   try {
     const health = await fetch(`${f.baseUrl}/healthz`);
     assert.equal(health.status, 200);
-    assert.deepEqual(await health.json(), { status: 'ok' });
+    assert.deepEqual(await health.json(), {
+      status: 'ok',
+      checks: { database: true, bot: true },
+      runtime: {
+        uptime_seconds: 0,
+        counters: {
+          api_requests: 0,
+          http_errors: 0,
+          updates_processed: 0,
+          update_errors: 0,
+          messages_sent: 0,
+          reminders_sent: 0,
+          reminder_errors: 0,
+        },
+      },
+    });
     const page = await fetch(`${f.baseUrl}/`);
     assert.equal(page.status, 200);
     assert.match(page.headers.get('content-type'), /text\/html/);
@@ -146,6 +172,39 @@ test('профиль и отметки общие для API и хранилищ
     assert.equal(removed.status, 200);
     assert.equal(f.storage.getUser(42), null);
     assert.deepEqual(f.storage.getTaskStates(42), []);
+    assert.deepEqual(f.storage.getEventsForTest(42).map((event) => event.type), ['reset']);
+  } finally {
+    await f.close();
+  }
+});
+
+test('статистика защищена ADMIN_TOKEN и фильтруется по когорте', async () => {
+  const f = await fixture();
+  try {
+    const cohortInitData = signInitData({
+      auth_date: Math.floor(instant.getTime() / 1000),
+      start_param: 'pilot_hr',
+      user: { id: 42 },
+    }, token);
+    f.storage.saveUser({ user_id: 42, step: 'idle' });
+    await fetch(`${f.baseUrl}/api/state`, { headers: auth(cohortInitData) });
+    await fetch(`${f.baseUrl}/api/events/share`, {
+      method: 'POST',
+      headers: { ...auth(cohortInitData), 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+
+    assert.equal((await fetch(`${f.baseUrl}/api/stats`)).status, 401);
+    const statsResponse = await fetch(`${f.baseUrl}/api/stats?start=pilot_hr`, {
+      headers: { Authorization: 'Bearer server-test-admin-token' },
+    });
+    assert.equal(statsResponse.status, 200);
+    const stats = await statsResponse.json();
+    assert.equal(stats.cohort, 'pilot_hr');
+    assert.equal(stats.users.total, 1);
+    assert.equal(stats.events.miniapp_opened, 1);
+    assert.equal(stats.events.share_used, 1);
+    assert.ok(stats.runtime.counters.api_requests >= 3);
   } finally {
     await f.close();
   }
@@ -185,5 +244,66 @@ test('демо-авторизация требует явного режима �
     assert.equal((await fetch(`${f.baseUrl}/api/state`)).status, 401);
   } finally {
     await f.close();
+  }
+});
+
+test('healthz возвращает 503, если бот не готов', async () => {
+  const f = await fixture({}, { healthProvider: () => ({ database: true, bot: false }) });
+  try {
+    const response = await fetch(`${f.baseUrl}/healthz`);
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).status, 'degraded');
+  } finally {
+    await f.close();
+  }
+});
+
+test('webhook принимает только точный x-max-bot-api-secret', async () => {
+  const storage = createStorage({ eventSalt, now: () => instant });
+  storage.saveUser({ user_id: 42, step: 'ready' });
+  const { bot } = createPyatiletkaBot({
+    storage,
+    config: { botToken: token, maxApiBase: 'http://127.0.0.1:1', reminderTz: 'UTC' },
+    clock: () => instant,
+  });
+  bot.botInfo = { user_id: 999, username: 'test_bot', is_bot: true };
+  const webhookHandler = bot.webhookCallback({
+    domain: 'example.test',
+    port: 3000,
+    path: '/webhook',
+    secret: 'webhook-secret-12345',
+  });
+  const server = createHttpServer({
+    storage,
+    config: { botToken: token, webhookPath: '/webhook' },
+    webhookHandler,
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  const body = JSON.stringify({
+    update_type: 'bot_stopped',
+    timestamp: instant.getTime(),
+    chat_id: 42,
+    user: { user_id: 42, first_name: 'Тест', is_bot: false },
+  });
+  try {
+    assert.equal((await fetch(`${baseUrl}/webhook`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+    })).status, 404);
+    assert.equal((await fetch(`${baseUrl}/webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-max-bot-api-secret': 'webhook-secret-12345' },
+      body,
+    })).status, 200);
+    const deadline = Date.now() + 500;
+    while (storage.getUser(42).bot_active !== 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.equal(storage.getUser(42).bot_active, 0);
+  } finally {
+    server.close();
+    await once(server, 'close');
+    storage.close();
   }
 });

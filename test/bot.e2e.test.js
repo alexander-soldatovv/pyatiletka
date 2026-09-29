@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { Keyboard } from '@maxhub/max-bot-api';
 import { createPyatiletkaBot, registerBotCommands } from '../src/bot.js';
 import { createStorage } from '../src/db.js';
 import { createMockMaxServer } from './mock-max/server.js';
@@ -38,9 +39,10 @@ test('полный сценарий проходит через реальный
   const f = await fixture();
   const run = f.bot.start({ mode: 'polling', options: { retry: false } });
   try {
-    f.max.botStarted(1);
+    f.max.botStarted(1, 'pilot_hr');
     await f.max.waitFor((state) => state.messages.length === 1);
     assert.match(f.max.state.messages[0].body.text, /Пятилетка/);
+    assert.equal(f.storage.getUser(1).cohort, 'pilot_hr');
 
     const steps = [
       'setup:start',
@@ -261,6 +263,36 @@ test('429 при отправке повторяется, а open_app получ
     const buttons = f.max.state.messages[0].body.attachments[0].payload.buttons.flat();
     assert.ok(buttons.some((button) => button.type === 'link' && button.url.includes('startapp=plan')));
     assert.ok(!buttons.some((button) => button.type === 'open_app'));
+  } finally {
+    await stopFixture(f, run);
+  }
+});
+
+test('bot_stopped выключает напоминания, а кнопка напоминания пишет событие', async () => {
+  const f = await fixture();
+  f.storage.saveUser({
+    user_id: 1,
+    step: 'ready',
+    sex: 'm',
+    birth_ym: '1963-04',
+    region: 'moscow',
+    employment: 'employee',
+    early: 'no',
+  });
+  const run = f.bot.start({ mode: 'polling', options: { retry: false } });
+  try {
+    await f.max.waitFor((state) => (state.requests.get('GET /updates') ?? 0) >= 1);
+    await f.sendToUser(1, {
+      text: 'Тестовое напоминание',
+      buttons: [[Keyboard.button.callback('Открыть шаг', 'reminder:open:dispensary_and_days')]],
+    });
+    f.max.press(1, 'reminder:open:dispensary_and_days');
+    await f.max.waitFor((state) => state.answers.length === 1);
+    assert.ok(f.storage.getEventsForTest(1).some((event) => event.type === 'reminder_opened'));
+
+    f.max.botStopped(1);
+    await f.max.waitFor(() => f.storage.getUser(1).bot_active === 0);
+    assert.equal(f.storage.listReminderUsers().length, 0);
   } finally {
     await stopFixture(f, run);
   }

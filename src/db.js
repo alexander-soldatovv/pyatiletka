@@ -16,6 +16,10 @@ function parsePayload(value) {
   }
 }
 
+function normalizeCohort(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(value) ? value : '';
+}
+
 export function createStorage({ path = ':memory:', eventSalt, now = () => new Date() } = {}) {
   if (typeof eventSalt !== 'string' || eventSalt.length < 16) {
     throw new Error('EVENT_SALT должен содержать не менее 16 символов');
@@ -34,6 +38,8 @@ export function createStorage({ path = ':memory:', eventSalt, now = () => new Da
       region TEXT,
       employment TEXT,
       early TEXT,
+      cohort TEXT NOT NULL DEFAULT '',
+      bot_active INTEGER NOT NULL DEFAULT 1 CHECK (bot_active IN (0, 1)),
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -61,11 +67,19 @@ export function createStorage({ path = ':memory:', eventSalt, now = () => new Da
       user_hash TEXT NOT NULL,
       type TEXT NOT NULL,
       payload TEXT,
+      cohort TEXT NOT NULL DEFAULT '',
       ts TEXT NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_events_user_hash ON events(user_hash);
   `);
+
+  const userColumns = new Set(db.prepare('PRAGMA table_info(users)').all().map((column) => column.name));
+  if (!userColumns.has('cohort')) db.exec("ALTER TABLE users ADD COLUMN cohort TEXT NOT NULL DEFAULT ''");
+  if (!userColumns.has('bot_active')) db.exec('ALTER TABLE users ADD COLUMN bot_active INTEGER NOT NULL DEFAULT 1');
+  const eventColumns = new Set(db.prepare('PRAGMA table_info(events)').all().map((column) => column.name));
+  if (!eventColumns.has('cohort')) db.exec("ALTER TABLE events ADD COLUMN cohort TEXT NOT NULL DEFAULT ''");
+  db.exec('CREATE INDEX IF NOT EXISTS idx_events_cohort_type ON events(cohort, type)');
 
   const timestamp = () => now().toISOString();
 
@@ -73,8 +87,8 @@ export function createStorage({ path = ':memory:', eventSalt, now = () => new Da
     getUser: db.prepare('SELECT * FROM users WHERE user_id = ?'),
     upsertUser: db.prepare(`
       INSERT INTO users (
-        user_id, step, sex, birth_ym, region, employment, early, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        user_id, step, sex, birth_ym, region, employment, early, cohort, bot_active, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(user_id) DO UPDATE SET
         step = excluded.step,
         sex = excluded.sex,
@@ -82,6 +96,8 @@ export function createStorage({ path = ':memory:', eventSalt, now = () => new Da
         region = excluded.region,
         employment = excluded.employment,
         early = excluded.early,
+        cohort = excluded.cohort,
+        bot_active = excluded.bot_active,
         updated_at = excluded.updated_at
     `),
     setTask: db.prepare(`
@@ -99,8 +115,27 @@ export function createStorage({ path = ':memory:', eventSalt, now = () => new Da
       INSERT OR IGNORE INTO reminders (user_id, task_id, period, bucket, sent_at)
       VALUES (?, ?, ?, ?, ?)
     `),
-    addEvent: db.prepare('INSERT INTO events (user_hash, type, payload, ts) VALUES (?, ?, ?, ?)'),
-    getEvents: db.prepare('SELECT type, payload, ts FROM events WHERE user_hash = ? ORDER BY id'),
+    releaseReminder: db.prepare(`
+      DELETE FROM reminders WHERE user_id = ? AND task_id = ? AND period = ? AND bucket = ?
+    `),
+    getReminders: db.prepare(`
+      SELECT task_id, period, bucket, sent_at FROM reminders WHERE user_id = ? ORDER BY task_id, period, bucket
+    `),
+    listReminderUsers: db.prepare("SELECT * FROM users WHERE step = 'ready' AND bot_active = 1 ORDER BY user_id"),
+    setBotActive: db.prepare('UPDATE users SET bot_active = ?, updated_at = ? WHERE user_id = ?'),
+    addEvent: db.prepare('INSERT INTO events (user_hash, type, payload, cohort, ts) VALUES (?, ?, ?, ?, ?)'),
+    getEvents: db.prepare('SELECT type, payload, cohort, ts FROM events WHERE user_hash = ? ORDER BY id'),
+    aggregateEvents: db.prepare(`
+      SELECT type, COUNT(*) AS count FROM events
+      WHERE (? = '' OR cohort = ?)
+      GROUP BY type ORDER BY type
+    `),
+    aggregateUsers: db.prepare(`
+      SELECT COUNT(*) AS total,
+        SUM(CASE WHEN step = 'ready' THEN 1 ELSE 0 END) AS ready,
+        SUM(CASE WHEN bot_active = 1 THEN 1 ELSE 0 END) AS active
+      FROM users WHERE (? = '' OR cohort = ?)
+    `),
     deleteEvents: db.prepare('DELETE FROM events WHERE user_hash = ?'),
     deleteUser: db.prepare('DELETE FROM users WHERE user_id = ?'),
   };
@@ -116,6 +151,8 @@ export function createStorage({ path = ':memory:', eventSalt, now = () => new Da
       }
       const existing = statements.getUser.get(String(user.user_id));
       const time = timestamp();
+      const cohort = normalizeCohort(user.cohort ?? existing?.cohort ?? '');
+      const botActive = user.bot_active == null ? (existing?.bot_active ?? 1) : (user.bot_active ? 1 : 0);
       statements.upsertUser.run(
         String(user.user_id),
         user.step,
@@ -124,6 +161,8 @@ export function createStorage({ path = ':memory:', eventSalt, now = () => new Da
         user.region ?? null,
         user.employment ?? null,
         user.early ?? null,
+        cohort,
+        botActive,
         existing?.created_at ?? time,
         time,
       );
@@ -150,9 +189,34 @@ export function createStorage({ path = ':memory:', eventSalt, now = () => new Da
       return result.changes === 1;
     },
 
-    recordEvent(userId, type, payload = null) {
+    releaseReminder(userId, taskId, period, bucket) {
+      return statements.releaseReminder.run(
+        String(userId),
+        taskId,
+        String(period ?? ''),
+        bucket,
+      ).changes === 1;
+    },
+
+    getRemindersForTest(userId) {
+      return statements.getReminders.all(String(userId));
+    },
+
+    listReminderUsers() {
+      return statements.listReminderUsers.all();
+    },
+
+    setBotActive(userId, active) {
+      const id = String(userId);
+      const result = statements.setBotActive.run(active ? 1 : 0, timestamp(), id);
+      if (result.changes === 0) this.saveUser({ user_id: id, step: 'idle', bot_active: active });
+      return this.getUser(id);
+    },
+
+    recordEvent(userId, type, payload = null, options = {}) {
       const hash = userHash(userId, eventSalt);
-      statements.addEvent.run(hash, type, payload == null ? null : JSON.stringify(payload), timestamp());
+      const cohort = normalizeCohort(options.cohort ?? this.getUser(userId)?.cohort ?? '');
+      statements.addEvent.run(hash, type, payload == null ? null : JSON.stringify(payload), cohort, timestamp());
     },
 
     getEventsForTest(userId) {
@@ -160,6 +224,32 @@ export function createStorage({ path = ':memory:', eventSalt, now = () => new Da
         ...event,
         payload: parsePayload(event.payload),
       }));
+    },
+
+    getStats(cohort = '') {
+      const normalized = normalizeCohort(cohort);
+      if (cohort && !normalized) throw new RangeError('Некорректный код когорты');
+      const events = Object.fromEntries(
+        statements.aggregateEvents.all(normalized, normalized).map((row) => [row.type, Number(row.count)]),
+      );
+      const users = statements.aggregateUsers.get(normalized, normalized);
+      return {
+        cohort: normalized || null,
+        users: {
+          total: Number(users.total ?? 0),
+          ready: Number(users.ready ?? 0),
+          active: Number(users.active ?? 0),
+        },
+        events,
+      };
+    },
+
+    healthCheck() {
+      try {
+        return db.prepare('SELECT 1 AS ok').get().ok === 1;
+      } catch {
+        return false;
+      }
     },
 
     deleteUser(userId) {
@@ -183,4 +273,3 @@ export function createStorage({ path = ':memory:', eventSalt, now = () => new Da
 }
 
 export { userHash };
-

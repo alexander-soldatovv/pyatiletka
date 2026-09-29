@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fetchWithTimeout } from '../src/bot.js';
-import { loadConfig } from '../src/config.js';
+import { loadConfig, resolveBotMode } from '../src/config.js';
 
 const eventSalt = 'test-event-salt-123456789';
 
@@ -30,4 +30,25 @@ test('сетевой клиент прерывает зависший запро
   });
   const timedFetch = fetchWithTimeout(5, hangingFetch);
   await assert.rejects(timedFetch('https://example.test'), (error) => error.name === 'TimeoutError');
+});
+
+test('webhook без публичного URL безопасно переходит на polling', () => {
+  const config = loadConfig({ botToken: 'test', eventSalt, mode: 'webhook', publicBaseUrl: '' });
+  assert.equal(resolveBotMode(config), 'polling');
+});
+
+test('публичный webhook требует секрет', () => {
+  assert.throws(
+    () => loadConfig({
+      botToken: 'test', eventSalt, mode: 'webhook', publicBaseUrl: 'https://example.test', webhookSecret: '',
+    }),
+    /WEBHOOK_SECRET/,
+  );
+});
+
+test('календарь напоминаний отклоняет невозможную дату', () => {
+  assert.throws(
+    () => loadConfig({ botToken: 'test', eventSalt, annualReminderDates: ['02-31'] }),
+    /ANNUAL_REMINDER_DATES/,
+  );
 });

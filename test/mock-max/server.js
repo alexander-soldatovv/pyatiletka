@@ -171,8 +171,11 @@ export async function createMockMaxServer({ token = 'mock-token' } = {}) {
   return {
     baseUrl,
     state,
-    botStarted(userId = 1) {
-      push({ update_type: 'bot_started', chat_id: userId, user: user(userId), payload: null });
+    botStarted(userId = 1, payload = null) {
+      push({ update_type: 'bot_started', chat_id: userId, user: user(userId), payload });
+    },
+    botStopped(userId = 1) {
+      push({ update_type: 'bot_stopped', chat_id: userId, user: user(userId) });
     },
     write(userId, text) {
       push({ update_type: 'message_created', message: incomingMessage(userId, text, `user-${++sequence}`) });

@@ -1,5 +1,6 @@
 import { Bot, Keyboard } from '@maxhub/max-bot-api';
 import { parseBirthYm } from './dates.js';
+import { safeErrorDetails } from './metrics.js';
 import { createDialogQueue } from './queue.js';
 import { buildPlan } from './rules.js';
 import {
@@ -112,6 +113,7 @@ export function createPyatiletkaBot({
   clock = () => new Date(),
   logger = console,
   queueOptions = {},
+  metrics = null,
 } = {}) {
   if (!storage) throw new TypeError('Нужно хранилище');
   if (!config?.botToken) throw new TypeError('Нужен BOT_TOKEN');
@@ -124,6 +126,11 @@ export function createPyatiletkaBot({
   });
   const queue = createDialogQueue({ minIntervalMs: 500, ...queueOptions });
   const now = () => currentMonth(clock, config.reminderTz ?? 'Europe/Moscow');
+
+  bot.use(async (_ctx, next) => {
+    metrics?.increment('updates_processed');
+    return next();
+  });
 
   function planFor(userId) {
     const user = storage.getUser(userId);
@@ -143,13 +150,26 @@ export function createPyatiletkaBot({
       ? bot.api.sendMessageToChat(ctx.chatId, body.text, { attachments: body.attachments })
       : bot.api.sendMessageToUser(userId, body.text, { attachments: body.attachments }));
     try {
-      return await queue.schedule(dialogId, () => send(bodyFromView(view)));
+      const result = await queue.schedule(dialogId, () => send(bodyFromView(view)));
+      metrics?.increment('messages_sent');
+      return result;
     } catch (error) {
       if (view.hasOpenApp && config.botUsername) {
-        return queue.schedule(dialogId, () => send(bodyFromView(replaceOpenAppWithLink(view, config.botUsername))));
+        const result = await queue.schedule(dialogId, () => send(bodyFromView(replaceOpenAppWithLink(view, config.botUsername))));
+        metrics?.increment('messages_sent');
+        return result;
       }
       throw error;
     }
+  }
+
+  async function sendToUser(userId, view) {
+    const result = await queue.schedule(userId, () => {
+      const body = bodyFromView(view);
+      return bot.api.sendMessageToUser(userId, body.text, { attachments: body.attachments });
+    });
+    metrics?.increment('messages_sent');
+    return result;
   }
 
   async function respond(ctx, view) {
@@ -157,6 +177,7 @@ export function createPyatiletkaBot({
     const dialogId = ctx.chatId ?? getUserId(ctx);
     try {
       await queue.schedule(dialogId, () => ctx.answerOnCallback({ message: bodyFromView(view) }));
+      metrics?.increment('messages_sent');
     } catch {
       await sendNew(ctx, view);
     }
@@ -169,10 +190,20 @@ export function createPyatiletkaBot({
 
   async function showWelcome(ctx) {
     const userId = getUserId(ctx);
-    if (!storage.getUser(userId)) storage.saveUser({ user_id: userId, step: 'idle' });
+    const existing = storage.getUser(userId);
+    storage.saveUser({
+      ...(existing ?? { user_id: userId, step: 'idle' }),
+      user_id: userId,
+      bot_active: true,
+      cohort: ctx.startPayload || existing?.cohort || '',
+    });
     storage.recordEvent(userId, 'setup_started');
     await respond(ctx, welcomeView());
   }
+
+  bot.on(['bot_stopped', 'dialog_removed'], async (ctx) => {
+    storage.setBotActive(getUserId(ctx), false);
+  });
 
   // В MAX у сообщения с вложением body.text равен null. Обрабатываем его до
   // command(), потому что версия 0.3.1 считает поле null текстовым сообщением.
@@ -205,8 +236,10 @@ export function createPyatiletkaBot({
     }
     if (payload === 'nav:help') return respond(ctx, helpView());
     if (payload === 'reset:yes') {
+      const cohort = user?.cohort ?? '';
       storage.deleteUser(userId);
-      storage.saveUser({ user_id: userId, step: 'idle' });
+      storage.recordEvent(userId, 'reset', null, { cohort });
+      storage.saveUser({ user_id: userId, step: 'idle', cohort, bot_active: true });
       return respond(ctx, welcomeView());
     }
     if (!user) return respond(ctx, staleView());
@@ -268,6 +301,15 @@ export function createPyatiletkaBot({
     if (payload === 'nav:dates') return requirePlan(ctx, datesView);
     if (payload === 'nav:sources') return requirePlan(ctx, sourcesView);
 
+    const reminderNavigation = payload.match(/^reminder:open:([a-z0-9_]+)$/);
+    if (reminderNavigation) {
+      const plan = planFor(userId);
+      const task = plan?.tasks.find((item) => item.id === reminderNavigation[1]);
+      if (!task) return respond(ctx, noProfileView());
+      storage.recordEvent(userId, 'reminder_opened', { task_id: task.id });
+      return respond(ctx, taskView(task));
+    }
+
     const taskNavigation = payload.match(/^nav:task:([a-z0-9_]+)$/);
     if (taskNavigation) {
       const plan = planFor(userId);
@@ -306,14 +348,15 @@ export function createPyatiletkaBot({
   });
 
   bot.catch(async (error) => {
+    metrics?.increment('update_errors');
     logger.error(JSON.stringify({
       level: 'error',
       event: 'bot_update_failed',
-      error: error instanceof Error ? error.message : 'unknown',
+      ...safeErrorDetails(error),
     }));
   });
 
-  return { bot, planFor };
+  return { bot, planFor, sendToUser };
 }
 
 export async function registerBotCommands(bot, logger = console) {
@@ -324,7 +367,7 @@ export async function registerBotCommands(bot, logger = console) {
     logger.warn(JSON.stringify({
       level: 'warn',
       event: 'commands_registration_failed',
-      error: error instanceof Error ? error.message : 'unknown',
+      ...safeErrorDetails(error),
     }));
     return false;
   }

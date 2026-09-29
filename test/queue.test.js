@@ -13,6 +13,20 @@ test('очередь сохраняет порядок внутри диалог
   assert.deepEqual(seen, [1, 2, 3]);
 });
 
+test('три обычных сообщения в один диалог стартуют не чаще двух раз в секунду', async () => {
+  let time = 1000;
+  const starts = [];
+  const queue = createDialogQueue({
+    minIntervalMs: 500,
+    now: () => time,
+    sleep: async (delay) => { time += delay; },
+  });
+  await Promise.all([1, 2, 3].map((value) => queue.schedule(42, async () => {
+    starts.push([value, time]);
+  })));
+  assert.deepEqual(starts, [[1, 1000], [2, 1500], [3, 2000]]);
+});
+
 test('429 повторяется с экспоненциальной задержкой', async () => {
   const delays = [];
   let attempts = 0;

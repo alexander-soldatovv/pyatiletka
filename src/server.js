@@ -1,7 +1,9 @@
 import { createServer } from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { safeErrorDetails } from './metrics.js';
 import { buildPlan, loadRulesData } from './rules.js';
 import { validateInitData } from './webapp-auth.js';
 
@@ -66,6 +68,13 @@ function errorJson(response, error) {
   const message = error instanceof HttpError ? error.message : 'Внутренняя ошибка сервера.';
   const headers = error?.retryAfter ? { 'retry-after': error.retryAfter } : {};
   json(response, status, { error: { code, message } }, headers);
+}
+
+function secretMatches(actual, expected) {
+  if (typeof actual !== 'string' || typeof expected !== 'string' || !expected) return false;
+  const left = Buffer.from(actual);
+  const right = Buffer.from(expected);
+  return left.length === right.length && timingSafeEqual(left, right);
 }
 
 async function readJsonBody(request, maxBytes) {
@@ -229,6 +238,8 @@ export function createHttpServer({
   publicDir = fileURLToPath(new URL('../public/', import.meta.url)),
   logger = console,
   webhookHandler = null,
+  metrics = null,
+  healthProvider = null,
 } = {}) {
   if (!storage) throw new TypeError('Нужно хранилище');
   if (!config?.botToken) throw new TypeError('Нужен BOT_TOKEN');
@@ -240,7 +251,7 @@ export function createHttpServer({
   function authenticate(request) {
     const raw = request.headers['x-max-init-data'];
     if (Array.isArray(raw)) throw new HttpError(401, 'auth_invalid', 'Некорректные данные запуска.');
-    if (config.allowDemoAuth && raw === 'demo') return { userId: config.demoUserId ?? 900000001, demo: true };
+    if (config.allowDemoAuth && raw === 'demo') return { userId: config.demoUserId ?? 900000001, demo: true, startParam: null };
     const result = validateInitData(raw, config.botToken, {
       maxAgeSec: config.initDataMaxAgeSec ?? 3600,
       now: clock().getTime(),
@@ -251,11 +262,32 @@ export function createHttpServer({
         ? 'Сессия устарела. Закройте и снова откройте мини-приложение из MAX.'
         : 'Откройте мини-приложение из MAX.');
     }
-    return { userId: result.user.id, demo: false };
+    return { userId: result.user.id, demo: false, startParam: result.startParam };
   }
 
   async function api(request, response, url) {
+    metrics?.increment('api_requests');
+    if (request.method === 'GET' && url.pathname === '/api/stats') {
+      const authorization = request.headers.authorization;
+      const token = typeof authorization === 'string' && authorization.startsWith('Bearer ')
+        ? authorization.slice(7)
+        : '';
+      if (!secretMatches(token, config.adminToken)) {
+        throw new HttpError(401, 'admin_auth', 'Нужен действующий токен администратора.');
+      }
+      let stats;
+      try {
+        stats = storage.getStats(url.searchParams.get('start') ?? '');
+      } catch {
+        throw new HttpError(400, 'invalid_cohort', 'Некорректный код когорты.');
+      }
+      return json(response, 200, { ...stats, runtime: metrics?.snapshot() ?? null });
+    }
     const auth = authenticate(request);
+    const currentUser = storage.getUser(auth.userId);
+    if (currentUser && auth.startParam && currentUser.cohort !== auth.startParam) {
+      storage.saveUser({ ...currentUser, cohort: auth.startParam });
+    }
     const rate = checkRate(auth.userId);
     if (!rate.allowed) {
       const retryAfter = String(rate.retryAfter);
@@ -264,12 +296,18 @@ export function createHttpServer({
       throw error;
     }
     if (request.method === 'GET' && url.pathname === '/api/state') {
+      storage.recordEvent(auth.userId, 'miniapp_opened', null, { cohort: auth.startParam ?? currentUser?.cohort });
       return json(response, 200, stateForUser(storage, auth.userId, now(), rulesData));
     }
     if (request.method === 'POST' && url.pathname === '/api/profile') {
       const body = await readJsonBody(request, config.requestBodyLimitBytes ?? 16_384);
       validateProfile(body, now(), regionIds);
-      storage.saveUser({ user_id: auth.userId, step: 'ready', ...body });
+      storage.saveUser({
+        user_id: auth.userId,
+        step: 'ready',
+        cohort: auth.startParam ?? currentUser?.cohort,
+        ...body,
+      });
       storage.recordEvent(auth.userId, 'setup_completed', { channel: 'miniapp' });
       return json(response, 200, stateForUser(storage, auth.userId, now(), rulesData));
     }
@@ -293,7 +331,16 @@ export function createHttpServer({
       return json(response, 200, stateForUser(storage, auth.userId, now(), rulesData));
     }
     if (request.method === 'DELETE' && url.pathname === '/api/me') {
+      const cohort = storage.getUser(auth.userId)?.cohort ?? '';
       storage.deleteUser(auth.userId);
+      storage.recordEvent(auth.userId, 'reset', null, { cohort });
+      return json(response, 200, { ok: true });
+    }
+    if (request.method === 'POST' && url.pathname === '/api/events/share') {
+      await readJsonBody(request, config.requestBodyLimitBytes ?? 16_384);
+      storage.recordEvent(auth.userId, 'share_used', { channel: 'miniapp' }, {
+        cohort: auth.startParam ?? currentUser?.cohort,
+      });
       return json(response, 200, { ok: true });
     }
     throw new HttpError(404, 'not_found', 'Метод API не найден.');
@@ -303,15 +350,29 @@ export function createHttpServer({
     try {
       const url = new URL(request.url, 'http://localhost');
       if (webhookHandler && url.pathname === config.webhookPath) return await webhookHandler(request, response);
-      if (request.method === 'GET' && url.pathname === '/healthz') return json(response, 200, { status: 'ok' });
+      if (request.method === 'GET' && url.pathname === '/healthz') {
+        let checks;
+        try {
+          checks = healthProvider?.() ?? { database: storage.healthCheck(), bot: true };
+        } catch {
+          checks = { database: false, bot: false };
+        }
+        const healthy = Object.values(checks).every(Boolean);
+        return json(response, healthy ? 200 : 503, {
+          status: healthy ? 'ok' : 'degraded',
+          checks,
+          runtime: metrics?.snapshot() ?? null,
+        });
+      }
       if (url.pathname.startsWith('/api/')) return await api(request, response, url);
       return await serveStatic(request, response, url.pathname, publicDir);
     } catch (error) {
       if (!(error instanceof HttpError)) {
         logger.error(JSON.stringify({
-          level: 'error', event: 'http_request_failed', error: error instanceof Error ? error.message : 'unknown',
+          level: 'error', event: 'http_request_failed', ...safeErrorDetails(error),
         }));
       }
+      metrics?.increment('http_errors');
       if (!response.headersSent) errorJson(response, error);
       else response.end();
     }

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { createStorage, userHash } from '../src/db.js';
 
 const eventSalt = 'test-only-salt-at-least-16';
@@ -94,6 +95,66 @@ test('состояние переживает повторное открыти�
     storage = createStorage({ path, eventSalt, now: fixedNow });
     assert.equal(storage.getUser(42).step, 'birth');
     assert.equal(storage.getUser(42).sex, 'm');
+  } finally {
+    storage.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('активность бота, когорта и агрегаты сохраняются без исходного ID', () => {
+  const storage = createStorage({ eventSalt, now: fixedNow });
+  try {
+    storage.saveUser({ user_id: 42, step: 'ready', cohort: 'pilot_hr' });
+    storage.recordEvent(42, 'setup_completed');
+    storage.setBotActive(42, false);
+    assert.equal(storage.listReminderUsers().length, 0);
+    storage.setBotActive(42, true);
+    assert.equal(storage.listReminderUsers().length, 1);
+    assert.deepEqual(storage.getStats('pilot_hr'), {
+      cohort: 'pilot_hr',
+      users: { total: 1, ready: 1, active: 1 },
+      events: { setup_completed: 1 },
+    });
+  } finally {
+    storage.close();
+  }
+});
+
+test('резерв напоминания можно снять после ошибки отправки', () => {
+  const storage = createStorage({ eventSalt, now: fixedNow });
+  try {
+    storage.saveUser({ user_id: 42, step: 'ready' });
+    assert.equal(storage.reserveReminder(42, 'task', '2026', 'bucket'), true);
+    assert.equal(storage.releaseReminder(42, 'task', '2026', 'bucket'), true);
+    assert.equal(storage.reserveReminder(42, 'task', '2026', 'bucket'), true);
+  } finally {
+    storage.close();
+  }
+});
+
+test('база P3 автоматически получает поля P4 без потери профиля', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'pyatiletka-migration-'));
+  const path = join(directory, 'old.sqlite');
+  const old = new DatabaseSync(path);
+  old.exec(`
+    CREATE TABLE users (
+      user_id TEXT PRIMARY KEY, step TEXT NOT NULL, sex TEXT, birth_ym TEXT,
+      region TEXT, employment TEXT, early TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, user_hash TEXT NOT NULL,
+      type TEXT NOT NULL, payload TEXT, ts TEXT NOT NULL
+    );
+    INSERT INTO users VALUES ('42', 'ready', 'm', '1963-04', 'moscow', 'employee', 'no', 'old', 'old');
+  `);
+  old.close();
+  const storage = createStorage({ path, eventSalt, now: fixedNow });
+  try {
+    assert.equal(storage.getUser(42).birth_ym, '1963-04');
+    assert.equal(storage.getUser(42).bot_active, 1);
+    assert.equal(storage.getUser(42).cohort, '');
+    storage.recordEvent(42, 'miniapp_opened');
+    assert.equal(storage.getStats().events.miniapp_opened, 1);
   } finally {
     storage.close();
     rmSync(directory, { recursive: true, force: true });

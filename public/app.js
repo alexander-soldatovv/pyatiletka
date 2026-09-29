@@ -340,6 +340,7 @@ function openLink(url) {
 
 function sharePlan() {
   const text = `Пятилетка: личная карта подготовки к пенсии. Выполнено ${app.state.progress.completed} из ${app.state.progress.total}. Даты ориентировочные, их подтверждает СФР.`;
+  void api('/api/events/share', { method: 'POST', body: '{}' }).catch(() => {});
   if (bridge?.shareContent && ['ios', 'android'].includes(bridge.platform)) {
     safeBridge(() => bridge.shareContent({ text }));
   } else {

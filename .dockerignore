@@ -5,7 +5,13 @@ node_modules
 coverage
 data/*.db
 data/*.db-*
+data/*.sqlite
+data/*.sqlite-*
 tmp
+tmp-cert-check.*
 alt_novosel
 starter
-
+docs
+test
+scripts
+*.md

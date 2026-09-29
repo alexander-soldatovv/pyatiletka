@@ -10,5 +10,7 @@ data/*.sqlite-*
 certs/*.key
 certs/*.pem
 !certs/README.md
+!certs/russian_trusted_ca.pem
 .DS_Store
 tmp/
+tmp-cert-check.*/

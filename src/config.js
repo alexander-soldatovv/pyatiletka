@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+
 const env = process.env;
 
 function int(name, def) {
@@ -45,6 +47,7 @@ export function loadConfig(overrides = {}) {
     headersTimeoutMs: int('HEADERS_TIMEOUT_MS', 5_000),
     demoUserId: int('DEMO_USER_ID', 900000001),
     adminToken: env.ADMIN_TOKEN || '',
+    caCertPath: env.NODE_EXTRA_CA_CERTS || '',
     ...overrides,
   };
   if (!cfg.botToken) {
@@ -84,6 +87,9 @@ export function loadConfig(overrides = {}) {
   }
   if (cfg.mode === 'webhook' && cfg.publicBaseUrl && cfg.webhookSecret.length < 16) {
     throw new Error('Для webhook нужен WEBHOOK_SECRET длиной не менее 16 символов.');
+  }
+  if (cfg.caCertPath && !existsSync(cfg.caCertPath)) {
+    throw new Error(`Не найден сертификат Минцифры: ${cfg.caCertPath}. См. certs/README.md.`);
   }
   return cfg;
 }

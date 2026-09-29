@@ -52,3 +52,12 @@ test('календарь напоминаний отклоняет невозм�
     /ANNUAL_REMINDER_DATES/,
   );
 });
+
+test('заданный путь сертификата должен существовать', () => {
+  assert.throws(
+    () => loadConfig({
+      botToken: 'test', eventSalt, caCertPath: './certs/does-not-exist.pem',
+    }),
+    /Не найден сертификат Минцифры/,
+  );
+});

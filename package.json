@@ -8,7 +8,10 @@
     "test": "node --test",
     "start": "node src/index.js",
     "demo": "node scripts/demo-webapp.js",
-    "check:data": "node scripts/check-data.js"
+    "check:data": "node scripts/check-data.js",
+    "check:secrets": "node scripts/check-secrets.js",
+    "check:certs": "node scripts/check-certificates.js",
+    "check": "npm run check:data && npm run check:secrets && npm test"
   },
   "dependencies": {
     "@maxhub/max-bot-api": "0.3.1"

@@ -11,6 +11,7 @@
     "check:data": "node scripts/check-data.js",
     "check:secrets": "node scripts/check-secrets.js",
     "check:certs": "node scripts/check-certificates.js",
+    "smoke:real": "node scripts/smoke-real.js",
     "check": "npm run check:data && npm run check:secrets && npm test"
   },
   "dependencies": {

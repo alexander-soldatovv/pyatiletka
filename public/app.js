@@ -3,10 +3,13 @@ const bottomNav = document.querySelector('#bottom-nav');
 const toast = document.querySelector('#toast');
 const bridge = window.WebApp;
 const demoMode = new URLSearchParams(window.location.search).get('demo') === '1';
+const diagnosticsMode = new URLSearchParams(window.location.search).get('diagnostics') === '1'
+  || bridge?.initDataUnsafe?.start_param === 'smoke';
 
 const app = {
   state: null,
-  page: 'map',
+  diagnostics: null,
+  page: diagnosticsMode ? 'profile' : 'map',
   selectedTaskId: null,
   initData: bridge?.initData || (demoMode ? 'demo' : ''),
   backHandler: null,
@@ -229,12 +232,24 @@ function renderProfile() {
       <p class="eyebrow">Ваши данные</p>
       <h1>Профиль</h1>
       <p class="section">Эти сведения нужны только для ориентировочной карты.</p>
+      ${diagnosticsPanel()}
       <div class="card section">${profileForm(profile)}</div>
       ${profile.step === 'ready' ? `<section class="section"><h2>Сейчас в профиле</h2><div class="meta-grid"><div class="meta-item"><span>Регион</span><strong>${escapeHtml(labels.region[profile.region])}</strong></div><div class="meta-item"><span>Занятость</span><strong>${escapeHtml(labels.employment[profile.employment])}</strong></div><div class="meta-item"><span>Досрочная пенсия</span><strong>${escapeHtml(labels.early[profile.early])}</strong></div></div></section>` : ''}
       <section class="section"><h2>Удаление данных</h2><p class="section">Профиль, отметки и история будут удалены без восстановления.</p><button class="danger-button section" type="button" id="delete-profile">Удалить мои данные</button></section>
     </section>`;
   document.querySelector('#profile-form').addEventListener('submit', saveProfile);
   document.querySelector('#delete-profile').addEventListener('click', deleteProfile);
+}
+
+function diagnosticsPanel() {
+  if (!diagnosticsMode || !app.diagnostics) return '';
+  return `<aside class="notice section" id="p6-diagnostics">
+    <span aria-hidden="true">P6</span>
+    <p><strong>Диагностика реального MAX</strong><br>
+    Проверенный user ID: ${escapeHtml(app.diagnostics.user_id)}<br>
+    Платформа: ${escapeHtml(bridge?.platform || 'unknown')}, версия: ${escapeHtml(bridge?.version || 'unknown')}<br>
+    Подпись initData: ${app.diagnostics.signature_verified ? 'проверена сервером' : 'демо-режим'}</p>
+  </aside>`;
 }
 
 function render() {
@@ -264,7 +279,11 @@ function navigate(page) {
 
 async function refresh() {
   try {
-    app.state = await api('/api/state');
+    const requests = [api('/api/state')];
+    if (diagnosticsMode) requests.push(api('/api/diagnostics/session'));
+    const [state, diagnostics = null] = await Promise.all(requests);
+    app.state = state;
+    app.diagnostics = diagnostics;
     render();
   } catch (error) {
     const stale = error.code === 'auth_stale';
@@ -343,6 +362,8 @@ function sharePlan() {
   void api('/api/events/share', { method: 'POST', body: '{}' }).catch(() => {});
   if (bridge?.shareContent && ['ios', 'android'].includes(bridge.platform)) {
     safeBridge(() => bridge.shareContent({ text }));
+  } else if (bridge?.shareMaxContent) {
+    safeBridge(() => bridge.shareMaxContent({ text }));
   } else {
     const url = `https://max.ru/:share?text=${encodeURIComponent(text)}`;
     if (bridge?.openMaxLink) safeBridge(() => bridge.openMaxLink(url));

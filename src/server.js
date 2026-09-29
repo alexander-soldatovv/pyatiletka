@@ -295,6 +295,13 @@ export function createHttpServer({
       error.retryAfter = retryAfter;
       throw error;
     }
+    if (request.method === 'GET' && url.pathname === '/api/diagnostics/session') {
+      return json(response, 200, {
+        user_id: String(auth.userId),
+        start_param: auth.startParam,
+        signature_verified: !auth.demo,
+      });
+    }
     if (request.method === 'GET' && url.pathname === '/api/state') {
       storage.recordEvent(auth.userId, 'miniapp_opened', null, { cohort: auth.startParam ?? currentUser?.cohort });
       return json(response, 200, stateForUser(storage, auth.userId, now(), rulesData));

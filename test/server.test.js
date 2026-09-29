@@ -121,6 +121,25 @@ test('API принимает только свежую подпись MAX', asyn
   }
 });
 
+test('диагностика P6 возвращает ID только из проверенного initData', async () => {
+  const f = await fixture();
+  try {
+    const diagnosticsData = signInitData({
+      auth_date: Math.floor(instant.getTime() / 1000),
+      start_param: 'smoke',
+      user: { id: 42, first_name: 'Тест' },
+    }, token);
+    const response = await fetch(`${f.baseUrl}/api/diagnostics/session`, { headers: auth(diagnosticsData) });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      user_id: '42', start_param: 'smoke', signature_verified: true,
+    });
+    assert.equal((await fetch(`${f.baseUrl}/api/diagnostics/session`)).status, 401);
+  } finally {
+    await f.close();
+  }
+});
+
 test('профиль и отметки общие для API и хранилища бота', async () => {
   const f = await fixture();
   try {

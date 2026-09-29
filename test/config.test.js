@@ -46,6 +46,21 @@ test('публичный webhook требует секрет', () => {
   );
 });
 
+test('публичный webhook принимает только HTTPS:443 и безопасный секрет', () => {
+  for (const overrides of [
+    { publicBaseUrl: 'http://example.test', webhookSecret: 'valid_secret_12345' },
+    { publicBaseUrl: 'https://example.test:8443', webhookSecret: 'valid_secret_12345' },
+    { publicBaseUrl: 'https://example.test', webhookSecret: 'invalid secret value' },
+    { publicBaseUrl: 'https://example.test', webhookSecret: 'valid_secret_12345', webhookPath: 'webhook' },
+  ]) {
+    assert.throws(() => loadConfig({ botToken: 'test', eventSalt, mode: 'webhook', ...overrides }), /PUBLIC_BASE_URL|WEBHOOK_/);
+  }
+  assert.doesNotThrow(() => loadConfig({
+    botToken: 'test', eventSalt, mode: 'webhook', publicBaseUrl: 'https://example.test',
+    webhookSecret: 'valid_secret_12345', webhookPath: '/webhook',
+  }));
+});
+
 test('календарь напоминаний отклоняет невозможную дату', () => {
   assert.throws(
     () => loadConfig({ botToken: 'test', eventSalt, annualReminderDates: ['02-31'] }),

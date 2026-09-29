@@ -85,8 +85,24 @@ export function loadConfig(overrides = {}) {
   if (cfg.adminToken && cfg.adminToken.length < 16) {
     throw new Error('ADMIN_TOKEN должен содержать не менее 16 символов.');
   }
-  if (cfg.mode === 'webhook' && cfg.publicBaseUrl && cfg.webhookSecret.length < 16) {
-    throw new Error('Для webhook нужен WEBHOOK_SECRET длиной не менее 16 символов.');
+  if (cfg.mode === 'webhook' && cfg.publicBaseUrl) {
+    let publicUrl;
+    try {
+      publicUrl = new URL(cfg.publicBaseUrl);
+    } catch {
+      throw new Error('PUBLIC_BASE_URL должен быть корректным HTTPS URL.');
+    }
+    if (publicUrl.protocol !== 'https:' || (publicUrl.port && publicUrl.port !== '443')
+      || publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash) {
+      throw new Error('PUBLIC_BASE_URL для webhook должен использовать HTTPS на порту 443 без credentials, query и fragment.');
+    }
+    if (!/^\/[A-Za-z0-9/_-]*$/u.test(cfg.webhookPath)) {
+      throw new Error('WEBHOOK_PATH должен начинаться с / и содержать только безопасные символы пути.');
+    }
+    if (cfg.webhookSecret.length < 16 || cfg.webhookSecret.length > 256
+      || !/^[A-Za-z0-9_-]+$/u.test(cfg.webhookSecret)) {
+      throw new Error('WEBHOOK_SECRET должен содержать 16-256 символов A-Z, a-z, 0-9, _ или -.');
+    }
   }
   if (cfg.caCertPath && !existsSync(cfg.caCertPath)) {
     throw new Error(`Не найден сертификат Минцифры: ${cfg.caCertPath}. См. certs/README.md.`);

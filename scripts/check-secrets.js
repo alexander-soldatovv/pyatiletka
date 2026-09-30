@@ -4,7 +4,7 @@ import { extname, join, relative } from 'node:path';
 
 const root = process.cwd();
 const skippedDirs = new Set(['.git', 'node_modules', 'coverage', 'tmp']);
-const skippedExtensions = new Set(['.cer', '.crt', '.db', '.jpg', '.jpeg', '.pdf', '.pem', '.png', '.sqlite']);
+const skippedExtensions = new Set(['.cer', '.crt', '.db', '.jpg', '.jpeg', '.pdf', '.png', '.sqlite']);
 const skippedFiles = new Set(['package-lock.json']);
 const findings = [];
 
@@ -15,7 +15,7 @@ function placeholder(value) {
     || value.startsWith('<')
     || value.startsWith('${')
     || value.startsWith('$')
-    || /[+*^\\]/u.test(value);
+    || value === '.+$';
 }
 
 function report(source, lineNumber, rule) {
@@ -23,6 +23,9 @@ function report(source, lineNumber, rule) {
 }
 
 function scanLine(line, source, lineNumber) {
+  if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/u.test(line)) {
+    report(source, lineNumber, 'обнаружен приватный ключ');
+  }
   const assignment = /\b(BOT_TOKEN|ADMIN_TOKEN|WEBHOOK_SECRET|EVENT_SALT)\s*=\s*["']?([^\s"'`#,;]+)/giu;
   for (const match of line.matchAll(assignment)) {
     if (!placeholder(match[2])) report(source, lineNumber, `${match[1]} содержит непустое значение`);
@@ -83,7 +86,7 @@ let history;
 try {
   history = execFileSync('git', [
     'log', '-p', '--all', '--no-ext-diff', '--format=commit %H', '--', '.',
-    ':(exclude)package-lock.json', ':(exclude)docs/case.pdf', ':(exclude)certs',
+    ':(exclude)package-lock.json', ':(exclude)docs/case.pdf',
   ], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 } catch (error) {
   console.error(`Не удалось проверить git-историю: ${error.message}`);
@@ -98,4 +101,4 @@ if (unique.length > 0) {
   process.exit(1);
 }
 
-console.log('Секреты: явные значения и длинные токеноподобные строки не найдены в файлах и git-истории.');
+console.log('Секреты: токены, приватные ключи и длинные токеноподобные строки не найдены в файлах и git-истории.');

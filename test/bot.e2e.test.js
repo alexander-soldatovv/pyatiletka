@@ -78,12 +78,14 @@ test('полный сценарий проходит через реальный
     await f.max.waitFor((state) => state.messages.length === 2);
     f.max.press(1, 'reset:yes');
     await f.max.waitFor((state) => state.answers.length === 12);
-    assert.equal(f.storage.getUser(1).step, 'idle');
+    assert.equal(f.storage.getUser(1), null);
     assert.deepEqual(f.storage.getTaskStates(1), []);
+    assert.deepEqual(f.storage.getRemindersForTest(1), []);
+    assert.deepEqual(f.storage.getEventsForTest(1), []);
 
     f.max.callback(1, 'task:done:dispensary_and_days');
     await f.max.waitFor((state) => state.answers.length === 13);
-    assert.match(f.max.state.answers.at(-1).body.message.text, /Сначала ответьте/);
+    assert.match(f.max.state.answers.at(-1).body.message.text, /устарела/);
     f.max.callback(1, 'unknown:payload');
     await f.max.waitFor((state) => state.answers.length === 14);
     assert.match(f.max.state.answers.at(-1).body.message.text, /устарела/);

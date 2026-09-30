@@ -12,9 +12,9 @@
 - Дедупликация в SQLite. При неудачной отправке резерв снимается и может быть повторён следующим проходом.
 - `bot_stopped` и `dialog_removed` выключают будущие напоминания пользователю; `bot_started` включает их снова.
 - Кнопка напоминания открывает нужный шаг и записывает `reminder_opened`.
-- События `setup_started`, `setup_completed`, `task_done`, `task_undone`, `reminder_sent`, `reminder_opened`, `miniapp_opened`, `share_used`, `reset`.
+- События `setup_started`, `setup_completed`, `task_done`, `task_undone`, `reminder_sent`, `reminder_opened`, `miniapp_opened`, `share_used`. Событие `reset` намеренно не сохраняется: после подтверждённого удаления не должно остаться пользовательского следа.
 - Когорта из start parameter, агрегаты `GET /api/stats?start=<код>` с `Authorization: Bearer <ADMIN_TOKEN>`.
-- `/healthz` проверяет БД и состояние бота, возвращает 503 при деградации и включает runtime-счётчики.
+- `/healthz` проверяет БД и состояние бота и возвращает 503 при деградации. Runtime-счётчики доступны только в защищённом `/api/stats`.
 - Повторный запуск polling после ошибки соединения, очистка старых webhook-подписок, обязательный webhook secret и fallback на polling без публичного URL.
 - Graceful shutdown останавливает планировщик, polling, webhook, HTTP-сервер и SQLite. `unhandledRejection` записывается структурно без текста ошибки и не роняет процесс молча.
 

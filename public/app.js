@@ -353,8 +353,17 @@ async function copyText(text, successMessage) {
 }
 
 function openLink(url) {
-  if (bridge?.openLink) safeBridge(() => bridge.openLink(url));
-  else window.open(url, '_blank', 'noopener,noreferrer');
+  let safeUrl;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') throw new TypeError('unsafe protocol');
+    safeUrl = parsed.href;
+  } catch {
+    showToast('Не удалось открыть небезопасную ссылку.');
+    return;
+  }
+  if (bridge?.openLink) safeBridge(() => bridge.openLink(safeUrl));
+  else window.open(safeUrl, '_blank', 'noopener,noreferrer');
 }
 
 function sharePlan() {

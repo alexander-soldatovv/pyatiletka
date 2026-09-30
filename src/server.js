@@ -29,6 +29,7 @@ const SECURITY_HEADERS = {
   ].join('; '),
   'permissions-policy': 'camera=(), microphone=(), geolocation=()',
   'referrer-policy': 'no-referrer',
+  'strict-transport-security': 'max-age=31536000; includeSubDomains',
   'x-content-type-options': 'nosniff',
 };
 
@@ -338,9 +339,7 @@ export function createHttpServer({
       return json(response, 200, stateForUser(storage, auth.userId, now(), rulesData));
     }
     if (request.method === 'DELETE' && url.pathname === '/api/me') {
-      const cohort = storage.getUser(auth.userId)?.cohort ?? '';
       storage.deleteUser(auth.userId);
-      storage.recordEvent(auth.userId, 'reset', null, { cohort });
       return json(response, 200, { ok: true });
     }
     if (request.method === 'POST' && url.pathname === '/api/events/share') {
@@ -368,7 +367,6 @@ export function createHttpServer({
         return json(response, healthy ? 200 : 503, {
           status: healthy ? 'ok' : 'degraded',
           checks,
-          runtime: metrics?.snapshot() ?? null,
         });
       }
       if (url.pathname.startsWith('/api/')) return await api(request, response, url);

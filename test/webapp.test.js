@@ -18,6 +18,7 @@ test('интерфейс содержит обязательные MAX Bridge и
     'BackButton',
     'HapticFeedback',
     'openLink',
+    "parsed.protocol !== 'https:'",
     'shareContent',
     'shareMaxContent',
     'navigator.clipboard',

@@ -68,23 +68,12 @@ test('сервер отдаёт healthz, статику и заголовки б
     assert.deepEqual(await health.json(), {
       status: 'ok',
       checks: { database: true, bot: true },
-      runtime: {
-        uptime_seconds: 0,
-        counters: {
-          api_requests: 0,
-          http_errors: 0,
-          updates_processed: 0,
-          update_errors: 0,
-          messages_sent: 0,
-          reminders_sent: 0,
-          reminder_errors: 0,
-        },
-      },
     });
     const page = await fetch(`${f.baseUrl}/`);
     assert.equal(page.status, 200);
     assert.match(page.headers.get('content-type'), /text\/html/);
     assert.match(page.headers.get('content-security-policy'), /https:\/\/st\.max\.ru/);
+    assert.match(page.headers.get('strict-transport-security'), /max-age=31536000/);
     assert.equal(page.headers.get('x-content-type-options'), 'nosniff');
     assert.match(await page.text(), /Пятилетка/);
   } finally {
@@ -186,12 +175,14 @@ test('профиль и отметки общие для API и хранилищ
       body: JSON.stringify({ status: 'todo', period: '1900' }),
     });
     assert.equal(mismatch.status, 409);
+    assert.equal(f.storage.reserveReminder(42, task.id, task.period, 'p7-reset-check'), true);
 
     const removed = await fetch(`${f.baseUrl}/api/me`, { method: 'DELETE', headers: auth(f.initData) });
     assert.equal(removed.status, 200);
     assert.equal(f.storage.getUser(42), null);
     assert.deepEqual(f.storage.getTaskStates(42), []);
-    assert.deepEqual(f.storage.getEventsForTest(42).map((event) => event.type), ['reset']);
+    assert.deepEqual(f.storage.getRemindersForTest(42), []);
+    assert.deepEqual(f.storage.getEventsForTest(42), []);
   } finally {
     await f.close();
   }

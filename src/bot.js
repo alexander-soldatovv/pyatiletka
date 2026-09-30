@@ -236,10 +236,7 @@ export function createPyatiletkaBot({
     }
     if (payload === 'nav:help') return respond(ctx, helpView());
     if (payload === 'reset:yes') {
-      const cohort = user?.cohort ?? '';
       storage.deleteUser(userId);
-      storage.recordEvent(userId, 'reset', null, { cohort });
-      storage.saveUser({ user_id: userId, step: 'idle', cohort, bot_active: true });
       return respond(ctx, welcomeView());
     }
     if (!user) return respond(ctx, staleView());
